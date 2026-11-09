@@ -1,0 +1,61 @@
+# Checkii assessment of every pull request, from any repository.
+#
+# Copy this file to .github/workflows/checkii.yml. Replace <commit> with a
+# reviewed 40-hex commit (never a tag or branch) and set the three ids from the
+# Checkii console. Public consumers use the released mirror,
+# uses: Checkii/checkii-ci@<commit>; the path below is the in-repository form
+# that the mirror's templates/github-actions.yml rewrites at release. The token is a service-account
+# key stored as a repository or organisation secret; it is never a literal.
+#
+# Exit codes of the underlying client: 0 passed, 1 threshold reached, 2 error
+# (including network failure), 3 policy denied, 4 cancelled or expired. Any
+# non-zero code fails the job; there is no "pass on error".
+name: checkii
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write   # upload-sarif; drop it and set upload-sarif: "false" to skip code scanning
+
+concurrency:
+  group: checkii-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  assess:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # The pull request head, so the assessed commit is the one reviewed.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - name: Checkii assessment
+        id: checkii
+        uses: Checkii/checkii-ci@<40-hex commit>
+        with:
+          api-url: https://api.checkii.ai
+          token: ${{ secrets.CHECKII_API_TOKEN }}
+          engagement-id: ${{ vars.CHECKII_ENGAGEMENT_ID }}
+          scope-version-id: ${{ vars.CHECKII_SCOPE_VERSION_ID }}
+          asset-id: ${{ vars.CHECKII_ASSET_ID }}
+          fail-on: high
+          sarif: checkii-results.sarif
+      - name: Summarise
+        if: always()
+        shell: bash
+        env:
+          JOB_ID: ${{ steps.checkii.outputs.job-id }}
+          STATUS: ${{ steps.checkii.outputs.status }}
+          CODE: ${{ steps.checkii.outputs.exit-code }}
+          TOTAL: ${{ steps.checkii.outputs.findings-total }}
+          ACTIONABLE: ${{ steps.checkii.outputs.actionable-total }}
+        run: |
+          {
+            echo "## Checkii"
+            echo "Job \`${JOB_ID:-none}\`, status \`${STATUS:-none}\`, exit code \`${CODE:-?}\`."
+            echo "Findings: ${TOTAL:-n/a} total, ${ACTIONABLE:-n/a} actionable."
+          } >> "$GITHUB_STEP_SUMMARY"

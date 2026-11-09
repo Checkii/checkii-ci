@@ -1,0 +1,69 @@
+# Checkii assessment of every merge request, for GitLab CI.
+#
+# Include this file or paste the job into .gitlab-ci.yml. It installs the
+# released checkii-ci 0.1.0 from PyPI by hash (checkii-requirements.txt,
+# copied from the mirror repository's requirements.txt for the tag you reviewed). CHECKII_API_TOKEN is a masked, protected CI/CD variable holding a
+# service-account key. The client is standard-library only, so the install is
+# --no-deps and nothing is resolved from an index.
+#
+# The image is pinned by tag because this repository has no earlier GitLab
+# example to share a digest with. Pin it by digest in your copy:
+#   image: python:3.12-slim@sha256:<digest>
+# where the digest is the one you reviewed (docker buildx imagetools inspect).
+#
+# Exit codes: 0 passed, 1 threshold reached, 2 error (including network
+# failure), 3 policy denied, 4 cancelled or expired. The job fails on any
+# non-zero code; do not add allow_failure.
+checkii:
+  stage: test
+  image: python:3.12-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"
+    CHECKII_API_URL: https://api.checkii.ai
+    CHECKII_CI_REV: "<40-hex commit of Checkii/aegis-platform>"
+    CHECKII_ENGAGEMENT_ID: "42"
+    CHECKII_SCOPE_VERSION_ID: "7"
+    CHECKII_ASSET_ID: "19"
+    CHECKII_FAIL_ON: high
+  before_script:
+    - |
+      case "$CHECKII_CI_REV" in
+        *[!0-9a-f]*|"") echo "CHECKII_CI_REV must be a 40-hex commit" >&2; exit 2 ;;
+      esac
+      [ "${#CHECKII_CI_REV}" -eq 40 ] || { echo "CHECKII_CI_REV must be a 40-hex commit" >&2; exit 2; }
+    - apt-get update -qq && apt-get install -qq -y --no-install-recommends git >/dev/null
+    # The build backend, hash-pinned (packages/checkii-ci/build-requirements.txt
+    # in the repository carries the same lines); the package is then built
+    # against it without isolation, so nothing is resolved from an index.
+    - |
+      cat > checkii-build-requirements.txt <<'REQ'
+      setuptools==84.2.1 \
+          --hash=sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc \
+          --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
+      REQ
+    - python3 -m pip install --quiet --require-hashes -r checkii-build-requirements.txt
+    # requirements.txt is the release's hash-pinned line from the mirror repository
+    # (https://github.com/Checkii/checkii-ci/blob/<tag>/requirements.txt), copied here.
+    - python3 -m pip install --quiet --no-deps --require-hashes -r checkii-requirements.txt
+    - checkii-ci version
+  script:
+    - export CHECKII_CI_IDEMPOTENCY_KEY="gitlab:${CI_PIPELINE_ID}:${CI_JOB_ID}:${CI_COMMIT_SHA}"
+    - >-
+      checkii-ci assess
+      --engagement-id "$CHECKII_ENGAGEMENT_ID"
+      --scope-version-id "$CHECKII_SCOPE_VERSION_ID"
+      --asset-id "$CHECKII_ASSET_ID"
+      --provider GITLAB
+      --head-ref "$CI_COMMIT_REF_NAME" --head-commit "$CI_COMMIT_SHA"
+      --base-ref "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" --base-commit "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+      --fail-on "$CHECKII_FAIL_ON"
+      --sarif-out checkii-results.sarif
+      --json-out checkii-summary.json
+  artifacts:
+    when: always
+    paths:
+      - checkii-results.sarif
+      - checkii-summary.json
+    expire_in: 30 days

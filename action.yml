@@ -1,0 +1,199 @@
+name: Checkii CI assessment
+description: >-
+  Run a fail-closed Checkii repository assessment of a base-to-head range,
+  upload the SARIF to code scanning and expose the job id and finding counts.
+  Reusable from any repository as
+  uses: Checkii/checkii-ci@<40-hex commit or vX.Y.Z tag>.
+  Exit codes: 0 passed, 1 threshold reached, 2 error (including network
+  failure), 3 policy denied, 4 cancelled or expired.
+
+inputs:
+  api-url:
+    description: Checkii control-plane URL (HTTPS).
+    default: https://api.checkii.ai
+  token:
+    description: A Checkii service-account key (aegis_sk_...). Pass a secret, never a literal.
+    required: true
+  engagement-id:
+    description: Engagement that authorises assessments of this repository.
+    required: true
+  scope-version-id:
+    description: Scope version the engagement approved.
+    required: true
+  asset-id:
+    description: The repository asset's id in Checkii.
+    required: true
+  head:
+    description: Commit under assessment (40 lowercase hex). Defaults to the pull request head, else the pushed commit.
+    default: ${{ github.event.pull_request.head.sha || github.sha }}
+  head-ref:
+    description: Ref of the commit under assessment.
+    default: ${{ github.head_ref || github.ref }}
+  base:
+    description: Base commit (40 lowercase hex). Defaults to the pull request base, else the parent of head.
+    default: ${{ github.event.pull_request.base.sha || '' }}
+  base-ref:
+    description: Ref of the base commit.
+    default: ${{ github.base_ref || github.event.repository.default_branch }}
+  fail-on:
+    description: Lowest severity that fails the run (info, low, medium, high, critical).
+    default: high
+  tools:
+    description: Space-separated tool names; empty uses the client's default set.
+    default: ""
+  sarif:
+    description: Where to write the SARIF.
+    default: checkii-results.sarif
+  receipt:
+    description: Where to write the sealed release receipt; empty writes none.
+    default: ""
+  upload-sarif:
+    description: Upload the SARIF to GitHub code scanning (needs security-events write).
+    default: "true"
+  timeout:
+    description: Seconds to wait for the assessment.
+    default: "900"
+
+outputs:
+  job-id:
+    description: The assessment job id, empty if none was issued.
+    value: ${{ steps.run.outputs.job-id }}
+  exit-code:
+    description: The client's exit code (0 passed, 1 threshold, 2 error, 3 policy denied, 4 cancelled).
+    value: ${{ steps.run.outputs.exit-code }}
+  status:
+    description: The job's terminal status, empty if none was reached.
+    value: ${{ steps.run.outputs.status }}
+  findings-total:
+    description: Number of findings bound to the job, empty unless the job completed.
+    value: ${{ steps.run.outputs.findings-total }}
+  actionable-total:
+    description: Findings not governed as false positive, accepted, remediated or not reproducible.
+    value: ${{ steps.run.outputs.actionable-total }}
+  sarif:
+    description: Path of the written SARIF, empty if none was written.
+    value: ${{ steps.run.outputs.sarif }}
+  receipt:
+    description: Path of the written receipt, empty if none was written.
+    value: ${{ steps.run.outputs.receipt }}
+  summary:
+    description: Path of the machine-readable run summary (checkii.ci-run-summary.v1).
+    value: ${{ steps.run.outputs.summary }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install checkii-ci from this action's checkout
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        # A runner whose system Python is externally managed (PEP 668) still
+        # accepts a --user install with this set; older pips ignore it.
+        PIP_BREAK_SYSTEM_PACKAGES: "1"
+        PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      run: |
+        set -euo pipefail
+        # This repository is checked out whole with the action, so the released
+        # package sits in package/ beside it. The package has no dependencies;
+        # --no-deps makes that a hard fact. The build backend is installed first
+        # from the hash-pinned list and the package is built against it without
+        # isolation, so nothing is resolved from an index.
+        package="$ACTION_PATH/package"
+        if [ -f "$package/pyproject.toml" ]; then
+          python3 -m pip install --quiet --user --require-hashes -r "$package/build-requirements.txt"
+          python3 -m pip install --quiet --no-deps --no-build-isolation --user "$package"
+        elif [ -f "$ACTION_PATH/requirements.txt" ]; then
+          # Only the released wheel or sdist whose digests this release recorded.
+          echo "::warning::package/ not found beside the action; installing the recorded release from PyPI"
+          python3 -m pip install --quiet --user --no-deps --require-hashes -r "$ACTION_PATH/requirements.txt"
+        else
+          echo "::error::neither package/ nor requirements.txt found beside the action" >&2
+          exit 2
+        fi
+        python3 -m checkii_ci version
+
+    - name: Resolve the base commit
+      id: base
+      shell: bash
+      env:
+        INPUT_BASE: ${{ inputs.base }}
+        HEAD: ${{ inputs.head }}
+      run: |
+        set -euo pipefail
+        if [ -n "$INPUT_BASE" ]; then
+          echo "commit=$INPUT_BASE" >> "$GITHUB_OUTPUT"
+        else
+          parent="$(git rev-parse "${HEAD}^" 2>/dev/null || true)"
+          if [ -z "$parent" ]; then
+            echo "::error::The head commit has no parent in this checkout; check out with fetch-depth 2 or pass base." >&2
+            exit 2
+          fi
+          echo "commit=$parent" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run the assessment
+      id: run
+      shell: bash
+      env:
+        CHECKII_API_URL: ${{ inputs.api-url }}
+        CHECKII_API_TOKEN: ${{ inputs.token }}
+        CHECKII_CI_IDEMPOTENCY_KEY: gh:${{ github.run_id }}:${{ github.run_attempt }}:${{ inputs.head }}
+        ENGAGEMENT: ${{ inputs.engagement-id }}
+        SCOPE: ${{ inputs.scope-version-id }}
+        ASSET: ${{ inputs.asset-id }}
+        HEAD_REF: ${{ inputs.head-ref }}
+        HEAD: ${{ inputs.head }}
+        BASE_REF: ${{ inputs.base-ref }}
+        BASE: ${{ steps.base.outputs.commit }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        TOOLS: ${{ inputs.tools }}
+        SARIF: ${{ inputs.sarif }}
+        RECEIPT: ${{ inputs.receipt }}
+        TIMEOUT: ${{ inputs.timeout }}
+      run: |
+        set -uo pipefail
+        summary="$RUNNER_TEMP/checkii-ci-summary.json"
+        args=(--engagement-id "$ENGAGEMENT" --scope-version-id "$SCOPE" --asset-id "$ASSET"
+              --provider GITHUB --head-ref "$HEAD_REF" --head-commit "$HEAD"
+              --base-ref "$BASE_REF" --base-commit "$BASE" --fail-on "$FAIL_ON"
+              --sarif-out "$SARIF" --json-out "$summary" --timeout "$TIMEOUT")
+        if [ -n "$RECEIPT" ]; then args+=(--receipt "$RECEIPT"); fi
+        for tool in $TOOLS; do args+=(--tool "$tool"); done
+        python3 -m checkii_ci assess "${args[@]}"
+        code=$?
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        echo "summary=$summary" >> "$GITHUB_OUTPUT"
+        if [ -f "$summary" ]; then
+          python3 - "$summary" >> "$GITHUB_OUTPUT" <<'PY'
+        import json, sys
+        doc = json.load(open(sys.argv[1]))
+        def show(value): return "" if value is None else str(value)
+        print("job-id=" + show(doc.get("job_id")))
+        print("status=" + show(doc.get("status")))
+        print("findings-total=" + show(doc.get("findings_total")))
+        print("actionable-total=" + show(doc.get("actionable_total")))
+        print("sarif=" + show(doc.get("sarif")))
+        print("receipt=" + show(doc.get("receipt")))
+        PY
+        else
+          printf 'job-id=\nstatus=\nfindings-total=\nactionable-total=\nsarif=\nreceipt=\n' >> "$GITHUB_OUTPUT"
+        fi
+        exit "$code"
+
+    - name: Upload the SARIF to code scanning
+      if: ${{ always() && inputs.upload-sarif == 'true' && steps.run.outputs.sarif != '' }}
+      uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+      with:
+        sarif_file: ${{ steps.run.outputs.sarif }}
+        category: checkii
+
+    - name: Retain the SARIF, receipt and summary as a workflow artifact
+      if: ${{ always() && steps.run.outputs.summary != '' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: checkii-ci-${{ inputs.head }}
+        path: |
+          ${{ steps.run.outputs.summary }}
+          ${{ inputs.sarif }}
+          ${{ inputs.receipt }}
+        if-no-files-found: ignore

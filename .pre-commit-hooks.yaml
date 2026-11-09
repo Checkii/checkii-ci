@@ -1,0 +1,24 @@
+# Hooks this repository offers to pre-commit users:
+#
+#   repos:
+#     - repo: https://github.com/Checkii/checkii-ci   # the public release mirror
+#       rev: <40-hex commit>
+#       hooks:
+#         - id: checkii-ci-assess
+#           args: [--engagement-id, "42", --scope-version-id, "7", --asset-id, "19",
+#                  --provider, GITHUB, --fail-on, high]
+#
+# The hook is `language: script`, not `language: python`: pre-commit installs a
+# python-language hook with `pip install .` of the hook repository's root, and
+# this repository's root is not a Python project. The script imports the
+# standard-library-only package beside it, so nothing is installed either way.
+# CHECKII_API_URL and CHECKII_API_TOKEN come from the developer's environment.
+- id: checkii-ci-assess
+  name: Checkii pull-request assessment
+  description: Run a fail-closed Checkii assessment of the pushed range before it leaves the machine.
+  entry: package/bin/checkii-ci-pre-push
+  language: script
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]
+  minimum_pre_commit_version: "3.2.0"

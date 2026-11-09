@@ -1,0 +1,44 @@
+[build-system]
+# Exact pin: an installer that builds in isolation resolves only this backend.
+# build-requirements.txt carries the same version with hashes for
+# --no-build-isolation installs.
+requires = ["setuptools==84.2.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "checkii-ci"
+version = "0.1.0"
+description = "Fail-closed pull-request assessment client for the Checkii control plane"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
+authors = [{ name = "Checkii" }]
+keywords = ["security", "ci", "sarif", "penetration-testing", "sast", "sca"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
+# Standard library only: urllib, json, argparse. Nothing is resolved from an
+# index at install time, so `pip install --no-deps` is the complete install.
+dependencies = []
+
+[project.urls]
+Homepage = "https://checkii.ai"
+Source = "https://github.com/Checkii/checkii-ci"
+Documentation = "https://github.com/Checkii/checkii-ci#readme"
+
+[project.scripts]
+checkii-ci = "checkii_ci.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["checkii_ci"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
