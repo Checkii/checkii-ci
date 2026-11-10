@@ -53,6 +53,17 @@ inputs:
   timeout:
     description: Seconds to wait for the assessment.
     default: "900"
+  idempotency-key:
+    description: >-
+      Idempotency key for the job issuance; empty derives one from the run id,
+      attempt and head. Set it when one workflow run assesses the same head
+      more than once, otherwise the control plane replays the first job.
+    default: ""
+  artifact-name:
+    description: >-
+      Name of the retained workflow artifact; empty derives checkii-ci-<head>.
+      Set it when one workflow run invokes the action more than once.
+    default: ""
 
 outputs:
   job-id:
@@ -137,7 +148,7 @@ runs:
       env:
         CHECKII_API_URL: ${{ inputs.api-url }}
         CHECKII_API_TOKEN: ${{ inputs.token }}
-        CHECKII_CI_IDEMPOTENCY_KEY: gh:${{ github.run_id }}:${{ github.run_attempt }}:${{ inputs.head }}
+        CHECKII_CI_IDEMPOTENCY_KEY: ${{ inputs.idempotency-key != '' && inputs.idempotency-key || format('gh:{0}:{1}:{2}', github.run_id, github.run_attempt, inputs.head) }}
         ENGAGEMENT: ${{ inputs.engagement-id }}
         SCOPE: ${{ inputs.scope-version-id }}
         ASSET: ${{ inputs.asset-id }}
@@ -191,7 +202,7 @@ runs:
       if: ${{ always() && steps.run.outputs.summary != '' }}
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       with:
-        name: checkii-ci-${{ inputs.head }}
+        name: ${{ inputs.artifact-name != '' && inputs.artifact-name || format('checkii-ci-{0}', inputs.head) }}
         path: |
           ${{ steps.run.outputs.summary }}
           ${{ inputs.sarif }}

@@ -5,7 +5,7 @@ its reusable GitHub Action. Apache-2.0. This repository is a release mirror:
 it is written by the release workflow of `Checkii/aegis-platform` and is not
 edited by hand; changes are made there and arrive with the next release.
 
-Release: `0.1.0`, built from aegis-platform commit `7b585e930aaa65193f5607e27136feb58ed10ab8`.
+Release: `0.1.1`, built from aegis-platform commit `dd384768e2a44477d0e53125a2561c305c392d36`.
 
 ## GitHub Action
 

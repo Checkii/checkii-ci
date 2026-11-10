@@ -17,7 +17,15 @@ class ApiFailure(RuntimeError):
     """
 
     def __init__(self, status: int, body: str):
-        super().__init__(f"Checkii API returned HTTP {status}")
+        # With no HTTP answer the body is this client's own reason (a
+        # timeout, a refused connection, a malformed body) and is safe to
+        # show; an HTTP body may carry policy detail and is never printed.
+        message = (
+            f"Checkii API returned HTTP {status}"
+            if status
+            else f"no answer from the Checkii API: {body}"
+        )
+        super().__init__(message)
         self.status = status
         self.body = body
 

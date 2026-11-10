@@ -1,7 +1,7 @@
 # Checkii assessment of every merge request, for GitLab CI.
 #
 # Include this file or paste the job into .gitlab-ci.yml. It installs the
-# released checkii-ci 0.1.0 from PyPI by hash (checkii-requirements.txt,
+# released checkii-ci 0.1.1 from PyPI by hash (checkii-requirements.txt,
 # copied from the mirror repository's requirements.txt for the tag you reviewed). CHECKII_API_TOKEN is a masked, protected CI/CD variable holding a
 # service-account key. The client is standard-library only, so the install is
 # --no-deps and nothing is resolved from an index.

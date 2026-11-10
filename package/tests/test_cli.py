@@ -240,7 +240,9 @@ def test_network_failure_is_an_error_never_a_pass(token_env, tmp_path, capsys):
     )
     assert code == EXIT_ERROR
     assert json.loads(summary.read_text())["exit_code"] == EXIT_ERROR
-    assert "HTTP 0" in capsys.readouterr().err
+    message = capsys.readouterr().err
+    assert "no answer from the Checkii API" in message
+    assert "HTTP 0" not in message
 
 
 def test_token_comes_from_the_environment_only(

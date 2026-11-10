@@ -1,5 +1,5 @@
 # The exact checkii-ci release this tree was staged from, with the sdist and
 # wheel digests recorded at publication. Install with --require-hashes.
-checkii-ci==0.1.0 \
-    --hash=sha256:35c385c00246b1ea37aaf8d749bc63119d88573a9dcec537a8a8cd134c4d772e \
-    --hash=sha256:66ec8adbdfe3c08008e68089ca03a2050dd07c7dd64a6d0844aa680d7977fc88
+checkii-ci==0.1.1 \
+    --hash=sha256:b45169af2b09061562c51b3cc350c1454d2857c37dae57484f21137b9aedd7f0 \
+    --hash=sha256:e7046187faf7dc1a23f564ecf6bd1960146f9288093df56de4c54b6daf316185
